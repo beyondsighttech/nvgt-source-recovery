@@ -1,0 +1,30 @@
+# Supplied games, engine libraries, recovered sources and generated builds.
+/build/
+/recovered/
+/test/
+*.exe
+*.dll
+*.zip
+*.bin
+*.bc
+*.dmp
+*.pdb
+*.obj
+*.a
+*.lib
+
+# Machine metadata, engineering conversation and credentials.
+/.freebuff/
+/.codex/
+/.agents/
+/CLAUDE.md
+.env
+.env.*
+*.pem
+*.key
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.DS_Store

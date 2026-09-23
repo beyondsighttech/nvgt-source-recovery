@@ -1,0 +1,9 @@
+* text=auto eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.as text eol=lf
+*.nvgt text eol=lf
+*.cpp text eol=lf
+*.yml text eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf
