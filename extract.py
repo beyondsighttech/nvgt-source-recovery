@@ -18,10 +18,11 @@ The payload is AES-256-CBC encrypted (nvgt_config.h):
     pad = PKCS#7-style: last byte = padding count, real size = len - pad
 after zlib compression (with its header and checksum).
 The bundled official release uses a separate SHA-256-derived profile, implemented
-by decrypt_official(). Other compiler releases may use different profiles.
+by decrypt_official(). Some custom forks use a footer-framed AES payload with
+raw AngelScript bytecode. Other compiler releases may use different profiles.
 
-The decrypted stream is Poco BinaryWriter output followed by the AngelScript
-SaveByteCode stream:
+Most decrypted NVGT streams are Poco BinaryWriter output followed by the
+AngelScript SaveByteCode stream; the custom footer profile contains raw bytecode:
 
     u16          plugin count, then 7-bit length + utf8 name per plugin
     i32          system namespace count, then 7-bit length pairs (name, path)
@@ -166,6 +167,9 @@ def payload_offset(data: bytes) -> int:
 
 def get_payload(data: bytes) -> bytes:
     """Slice the encrypted bytecode payload out of a packaged executable."""
+    import footer_crypto
+    if footer_crypto.matches(data):
+        return footer_crypto.payload(data)
     r = Reader(data, payload_offset(data))
     _skip_embedded_packs(r)
     encoded_size = r.varint()
@@ -493,6 +497,17 @@ def extract(source: Path, raw_payload: bool = False,
 def extract_data(data: bytes, raw_payload: bool = False,
                  key: bytes | None = None, iv: bytes | None = None) -> tuple[NvgtInfo, bytes]:
     """Decode bytes with the complete executable context for bound profiles."""
+    import footer_crypto
+    if not raw_payload and footer_crypto.matches(data):
+        if key is not None or iv is not None:
+            raise ValueError("key/IV overrides are unsupported for this custom footer profile")
+        stream = footer_crypto.decrypt(data)
+        info = NvgtInfo()
+        info.plugins, info.namespaces, info.engine_properties = [], [], []
+        info.timestamp, info.no_auto_chdir, info.bytecode = 0, 0, stream
+        info.preamble_profile = "raw_angelscript"
+        info.packaging_profile = footer_crypto.PROFILE
+        return info, stream
     import custom_crypto
     import variant_crypto
     variant = None if raw_payload else variant_crypto.match(data)

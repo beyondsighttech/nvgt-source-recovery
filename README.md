@@ -45,7 +45,7 @@ A successful export is not proof that the project compiles or behaves like the g
 
 Use this tool on software you own or are authorized to analyze. Recovered strings, debug section paths and code may contain private information; review an archive before sharing it. The manifest records the input filename and hash, not its local directory. This project is independent of NVGT and AngelScript and provides no guarantee of complete recovery. Compiling or running exported code is a separate action and should be done only after inspection.
 
-Supported profiles include selected release and development builds, historical 64-bit AngelScript bytecode variants, executables with embedded packs, three verified custom AES builds, and one PE-bound custom profile. Signed executables may place an Authenticode certificate after the NVGT payload. A matching version label does not guarantee compatibility with a customized build. Unsupported inputs and compressed bytecode over the 256 MiB limit fail with an error rather than an invented source project.
+Supported profiles include selected release and development builds, historical 64-bit AngelScript bytecode variants, executables with embedded packs, three verified custom AES builds, one footer-framed AES build, and one PE-bound custom profile. Signed executables may place an Authenticode certificate after the NVGT payload. A matching version label does not guarantee compatibility with a customized build. Unsupported inputs and compressed bytecode over the 256 MiB limit fail with an error rather than an invented source project.
 
 ## Testing and development
 

@@ -39,7 +39,7 @@ The source layout is generated from bytecode. Original comments, formatting, mac
 
 Recovery reads the game without running it. Unsupported encryption or bytecode formats fail with an error. A successful export and zero decompiler diagnostics do not prove compilation or correct behavior. Native APIs and plugins may require the matching engine build; runtime assets are not copied into the archive. Review recovered content before sharing or executing it.
 
-The extractor has verified profiles for selected bundled release/development formats, two older NVGT headers, three custom AES builds, and one PE-bound XChaCha20/AES/HMAC build. The PE-bound profile requires the complete executable because its keys depend on PE data; a bare encrypted payload is insufficient. Profile selection uses crypto seeds embedded in the stub, not game filenames or version strings. Some customized builds also add configuration pairs before AngelScript bytecode. Other custom builds may use different parameters even when version strings match.
+The extractor has verified profiles for selected bundled release/development formats, two older NVGT headers, three custom AES builds, one footer-framed AES build, and one PE-bound XChaCha20/AES/HMAC build. The PE-bound profile requires the complete executable because its keys depend on PE data; a bare encrypted payload is insufficient. Custom profile selection uses loader data in the executable, not game filenames or version strings. Some customized builds also add configuration pairs before AngelScript bytecode. Other custom builds may use different parameters even when version strings match.
 
 For single-file output or disassembly:
 
