@@ -56,14 +56,14 @@ class ExtractionTests(unittest.TestCase):
         stream = (struct.pack("<H", 2) + string("legacy_sound") + string(plugin)
                   + struct.pack("<i", 1) + string("sound") + string("upcoming")
                   + b"".join(map(encode, properties)) + struct.pack("<qB", 123456, 1)
-                  + b"bytecode marker")
+                  + b"\x01" + bytes(14))
         info = extract.split_stream(stream)
         self.assertEqual(info.plugins, ["legacy_sound", plugin])
         self.assertEqual(info.namespaces, [("sound", "upcoming")])
         self.assertEqual(info.engine_properties, properties)
         self.assertEqual(info.timestamp, 123456)
         self.assertEqual(info.no_auto_chdir, 1)
-        self.assertEqual(info.bytecode, b"bytecode marker")
+        self.assertEqual(info.bytecode, b"\x01" + bytes(14))
 
     def test_pre_namespace_preamble_requires_complete_bytecode(self):
         encode = extract.Reader.varint_bytes

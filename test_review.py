@@ -48,7 +48,7 @@ class ReaderValidationTests(unittest.TestCase):
                 extract.Reader(data).varint()
 
     def test_negative_namespace_count_is_rejected(self):
-        with self.assertRaisesRegex(ValueError, "namespace count"):
+        with self.assertRaisesRegex(ValueError, "metadata layout"):
             extract.split_stream(bytes(2) + struct.pack("<i", -1) + bytes(50))
 
     def test_malformed_pe_headers_and_imports_are_rejected(self):

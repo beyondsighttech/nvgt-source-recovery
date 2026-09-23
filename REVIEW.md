@@ -6,7 +6,8 @@ The review covered extraction and decryption, bytecode parsing, VM and control-f
 
 - Preserved namespaces across declarations and references, and suppressed duplicate function declarations from serialized tables.
 - Added bounds checks for PE structures, compressed data, integers, and bytecode headers.
-- Added support for historical package layouts, signed-PE trailers, serialized configuration, and verified custom AES profiles. A footer-framed custom fork now derives its AES key from loader constants and validates a complete AngelScript module.
+- Added support for historical package layouts, signed-PE trailers, serialized configuration, and verified custom AES profiles. A footer-framed custom fork derives its AES key from loader constants and validates a complete AngelScript module.
+- Matched current NVGT serialization of AngelScript engine properties as 64-bit varints and discovered version-varying property counts by complete module parsing. Added validated PE overlay inference for changed size XOR masks and a privacy-safe diagnostic report with stable failure stages.
 - Corrected embedded-pack framing, several VM and control-flow cases, and reference-returning chained assignments.
 - Indexed control-flow lookups and cached module-wide type maps to improve large-module performance.
 - Protected input and archive paths against replacement and collisions. Exported manifests distinguish reconstruction, compilation, and behavior checks.

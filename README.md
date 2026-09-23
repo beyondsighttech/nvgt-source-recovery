@@ -25,7 +25,13 @@ To check whether the reconstructed source compiles with a specific NVGT build, o
 python recover.py path/to/game.exe -o game-source.zip --check-with path/to/nvgt.exe
 ```
 
-This compiles generated source in a disposable folder and adds `compile-report.txt`; it does not run the supplied game. A compiler pass does not establish behavioral equivalence. See [USAGE.md](USAGE.md) for more options. This is a CLI-only project; no GUI or game executable is distributed here.
+This compiles generated source in a disposable folder and adds `compile-report.txt`; it does not run the supplied game. A compiler pass does not establish behavioral equivalence. If recovery fails, generate a shareable stage report:
+
+```sh
+python diagnose.py path/to/game.exe --output report.json
+```
+
+The report omits the input filename, path, hash, strings and recovered source. See [USAGE.md](USAGE.md) for more options. This is a CLI-only project; no GUI or game executable is distributed here.
 
 ## What the export contains
 
@@ -45,7 +51,7 @@ A successful export is not proof that the project compiles or behaves like the g
 
 Use this tool on software you own or are authorized to analyze. Recovered strings, debug section paths and code may contain private information; review an archive before sharing it. The manifest records the input filename and hash, not its local directory. This project is independent of NVGT and AngelScript and provides no guarantee of complete recovery. Compiling or running exported code is a separate action and should be done only after inspection.
 
-Supported profiles include selected release and development builds, historical 64-bit AngelScript bytecode variants, executables with embedded packs, three verified custom AES builds, one footer-framed AES build, and one PE-bound custom profile. Signed executables may place an Authenticode certificate after the NVGT payload. A matching version label does not guarantee compatibility with a customized build. Unsupported inputs and compressed bytecode over the 256 MiB limit fail with an error rather than an invented source project.
+Supported profiles include selected release and development builds, historical AngelScript bytecode variants, executables with embedded packs, three verified custom AES builds, one footer-framed AES build, and one PE-bound custom profile. Engine property counts and 64-bit values are read from the serialized stream; a changed payload-size XOR can be inferred when decryption and complete bytecode parsing both succeed. Signed executables may place an Authenticode certificate after the NVGT payload. A matching version label does not guarantee compatibility with a customized build. Unsupported inputs and compressed bytecode over the 256 MiB limit fail with an error rather than an invented source project.
 
 ## Testing and development
 

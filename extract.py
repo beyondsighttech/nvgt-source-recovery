@@ -54,6 +54,7 @@ AES_KEY = hashlib.sha256(b"Kernel32.lib").digest()
 AES_IV = bytes(AES_KEY[i * 2 + 1] ^ (31 + i * 4) for i in range(16))
 NUM_ENGINE_PROPERTIES = 41                # asEP_LAST_PROPERTY
 LEGACY_NUM_ENGINE_PROPERTIES = 38         # observed in pre-namespace NVGT stream
+MAX_ENGINE_PROPERTIES = 128               # bounded search for historical/future enum growth
 
 
 class Reader:
@@ -102,6 +103,18 @@ class Reader:
                 raise ValueError("Poco integer exceeds 32 bits")
             result |= (b & 0x7F) << shift
             if not b & 0x80:
+                return result
+        raise ValueError("unterminated Poco integer")
+
+    def varint64(self) -> int:
+        """Read Poco's UInt64 7-bit encoding used for engine properties."""
+        result = 0
+        for index in range(10):
+            byte = self.u8()
+            if index == 9 and byte > 1:
+                raise ValueError("Poco integer exceeds 64 bits")
+            result |= (byte & 0x7f) << (7 * index)
+            if not byte & 0x80:
                 return result
         raise ValueError("unterminated Poco integer")
 
@@ -199,6 +212,34 @@ def get_payload(data: bytes) -> bytes:
     if len(valid) != 1:
         raise ValueError("Cannot identify NVGT payload size/profile")
     return r.raw(valid[0])
+
+
+def _inferred_overlay_payloads(data: bytes):
+    """Offer exact PE overlay spans when a custom build changed only size XOR.
+
+    A candidate is accepted only after decryption and complete module parsing.
+    The signed-PE security directory can begin after the script payload.
+    """
+    if data[:2] != b"MZ":
+        return
+    try:
+        reader = Reader(data, payload_offset(data))
+        _skip_embedded_packs(reader)
+        reader.varint()  # Advance past the encoded size; its XOR mask may be unknown.
+    except ValueError:
+        return
+    ends = [len(data)]
+    certificate = _pe_certificate_region(data)
+    if certificate is not None and certificate[0] + certificate[1] == len(data):
+        ends.insert(0, certificate[0])
+    for end in ends:
+        for padding in range(16):
+            candidate_end = end - padding
+            if padding and data[candidate_end:end] != bytes(padding):
+                break
+            size = candidate_end - reader.pos
+            if size >= 16 and size % 16 == 0:
+                yield data[reader.pos:candidate_end]
 
 
 def _pe_certificate_region(data: bytes) -> tuple[int, int] | None:
@@ -431,58 +472,110 @@ class NvgtInfo:
 
 
 def split_stream(stream: bytes) -> NvgtInfo:
-    """Peel the versioned NVGT metadata from decrypted AngelScript bytecode."""
-    info = NvgtInfo()
-    r = Reader(stream)
-    info.plugins = [r.string() for _ in range(r.u16())]
-    namespace_count = r.i32()
-    if 0 <= namespace_count <= (len(stream) - r.pos) // 2:
-        info.namespaces = [(r.string(), r.string()) for _ in range(namespace_count)]
-        info.engine_properties = [r.varint() for _ in range(NUM_ENGINE_PROPERTIES)]
-        info.timestamp = r.i64()
-        info.no_auto_chdir = r.u8()
-        info.config_overrides = []
-        bytecode_start = r.pos
-        # Some custom builds save config key/value pairs before AngelScript.
-        # Only select this extension if the remaining module parses exactly.
-        if r.pos + 4 <= len(stream):
-            try:
-                config_count = r.i32()
-                if not 0 < config_count <= min(4096, (len(stream) - r.pos) // 2):
-                    raise ValueError("no config block")
-                entries = [(r.string(), r.string()) for _ in range(config_count)]
-                from asreader import read_module
-                read_module(stream[r.pos:])
-            except ValueError:
-                r.pos = bytecode_start
-            else:
-                info.config_overrides = entries
-                info.bytecode = bytes(stream[r.pos:])
-                info.preamble_profile = "namespaces_41_properties_config"
-                return info
-        info.bytecode = bytes(stream[bytecode_start:])
-        info.preamble_profile = "namespaces_41_properties"
-        return info
+    """Locate metadata boundaries by validating the complete saved module.
 
-    # Older NVGT saved plugins, 38 engine properties and a timestamp, with
-    # neither namespaces nor the no-auto-chdir byte. Validate the complete
-    # AngelScript stream so arbitrary bad metadata cannot select this profile.
-    r.pos = 0
-    info.plugins = [r.string() for _ in range(r.u16())]
-    info.namespaces = []
-    info.engine_properties = [r.varint() for _ in range(LEGACY_NUM_ENGINE_PROPERTIES)]
-    info.timestamp = r.i64()
-    info.no_auto_chdir = 0
-    info.bytecode = bytes(stream[r.pos:])
-    if not 946684800000000 <= info.timestamp <= 4102444800000000:
-        raise ValueError("invalid namespace count")
+    NVGT serializes asEP_LAST_PROPERTY values without recording their count.
+    That enum changes with AngelScript versions, so inspect plausible counts
+    instead of assuming a version label or one fixed offset.
+    """
     from asreader import read_module
-    try:
-        read_module(info.bytecode)
-    except ValueError as error:
-        raise ValueError("invalid namespace count or unsupported legacy bytecode") from error
-    info.preamble_profile = "plugins_38_properties"
-    return info
+
+    r = Reader(stream)
+    plugin_count = r.u16()
+    if plugin_count > min(4096, len(stream) - r.pos):
+        raise ValueError("invalid NVGT plugin count")
+    plugins = [r.string() for _ in range(plugin_count)]
+    after_plugins = r.pos
+
+    def candidates(preferred: int):
+        yield preferred
+        for count in range(1, MAX_ENGINE_PROPERTIES + 1):
+            if count != preferred:
+                yield count
+
+    def parsed_module(start: int) -> bool:
+        if start >= len(stream) or stream[start] not in (0, 1):
+            return False
+        try:
+            read_module(stream[start:])
+        except ValueError:
+            return False
+        return True
+
+    def find_layout(meta_start: int, namespaces: list[tuple[str, str]],
+                    with_flag: bool, preferred: int) -> NvgtInfo | None:
+        positions = []
+        reader = Reader(stream, meta_start)
+        for count in range(1, MAX_ENGINE_PROPERTIES + 1):
+            try:
+                reader.varint64()
+            except ValueError:
+                break
+            positions.append(reader.pos)
+        for count in candidates(preferred):
+            if count > len(positions):
+                continue
+            reader = Reader(stream, positions[count - 1])
+            try:
+                timestamp = reader.i64()
+                no_auto_chdir = reader.u8() if with_flag else 0
+            except ValueError:
+                continue
+            if not with_flag and not 946684800000000 <= timestamp <= 4102444800000000:
+                continue
+            if with_flag and no_auto_chdir not in (0, 1):
+                continue
+            bytecode_start = reader.pos
+            config_overrides = []
+            preamble_suffix = ""
+            if not parsed_module(bytecode_start):
+                if not with_flag or bytecode_start + 4 > len(stream):
+                    continue
+                try:
+                    config_count = reader.i32()
+                    if not 0 < config_count <= min(4096, (len(stream) - reader.pos) // 2):
+                        continue
+                    config_overrides = [(reader.string(), reader.string())
+                                        for _ in range(config_count)]
+                except ValueError:
+                    continue
+                bytecode_start = reader.pos
+                if not parsed_module(bytecode_start):
+                    continue
+                preamble_suffix = "_config"
+            properties_reader = Reader(stream, meta_start)
+            properties = [properties_reader.varint64() for _ in range(count)]
+            info = NvgtInfo()
+            info.plugins = plugins
+            info.namespaces = namespaces
+            info.engine_properties = properties
+            info.timestamp = timestamp
+            info.no_auto_chdir = no_auto_chdir
+            info.bytecode = bytes(stream[bytecode_start:])
+            info.config_overrides = config_overrides
+            prefix = "namespaces" if with_flag else "plugins"
+            info.preamble_profile = f"{prefix}_{count}_properties{preamble_suffix}"
+            return info
+        return None
+
+    if after_plugins + 4 <= len(stream):
+        reader = Reader(stream, after_plugins)
+        namespace_count = reader.i32()
+        if 0 <= namespace_count <= min(4096, (len(stream) - reader.pos) // 2):
+            try:
+                namespaces = [(reader.string(), reader.string())
+                              for _ in range(namespace_count)]
+            except ValueError:
+                pass
+            else:
+                result = find_layout(reader.pos, namespaces, True, NUM_ENGINE_PROPERTIES)
+                if result is not None:
+                    return result
+
+    result = find_layout(after_plugins, [], False, LEGACY_NUM_ENGINE_PROPERTIES)
+    if result is not None:
+        return result
+    raise ValueError("unsupported NVGT metadata layout or AngelScript bytecode")
 
 
 # ---------------------------------------------------------------------------
@@ -551,9 +644,25 @@ def extract_data(data: bytes, raw_payload: bool = False,
             info.timestamp, info.no_auto_chdir, info.bytecode = 0, 0, stream
             info.packaging_profile = profile
             return info, stream
-    payload = data if raw_payload else get_payload(data)
-    stream = decrypt(payload, key, iv)
-    return split_stream(stream), stream
+    payload = None
+    try:
+        payload = data if raw_payload else get_payload(data)
+        stream = decrypt(payload, key, iv)
+        return split_stream(stream), stream
+    except (ValueError, zlib.error) as first_error:
+        if raw_payload:
+            raise
+        for inferred_payload in _inferred_overlay_payloads(data):
+            if payload is not None and inferred_payload == payload:
+                continue
+            try:
+                stream = decrypt(inferred_payload, key, iv)
+                info = split_stream(stream)
+            except (ValueError, zlib.error):
+                continue
+            info.packaging_profile = "inferred_size_xor"
+            return info, stream
+        raise ValueError(f"{first_error}; no validated PE overlay candidate") from first_error
 
 
 def decrypt_legacy(payload: bytes) -> bytes:

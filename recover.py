@@ -425,7 +425,7 @@ def main():
         exporter = generate_archive if args.zip_only or Path(args.output).suffix.lower() == ".zip" else generate_project
         manifest = exporter(args.input, args.output, args.file_lines, print, compiler=args.check_with)
     except (OSError, ValueError, RuntimeError) as error:
-        parser.exit(1, f"Recovery failed: {error}\n")
+        parser.exit(1, f"Recovery failed: {error}\nFor a shareable, privacy-safe stage report, run python diagnose.py <executable>.\n")
     print(json.dumps(manifest["diagnostics"]))
     return 0
 

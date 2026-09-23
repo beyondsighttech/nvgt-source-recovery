@@ -66,7 +66,8 @@ class CustomCryptoTests(unittest.TestCase):
 
     def test_extraction_and_owned_repack_preserve_original_stub(self):
         stub = owned_stub()
-        stream = bytes(6) + bytes(41) + struct.pack("<qB", 123, 0) + b"owned bytecode"
+        prefix = bytes(6) + bytes(41) + struct.pack("<qB", 123, 0)
+        stream = prefix + b"\x01" + bytes(14)
         payload = crypto.encrypt_owned(stream, stub)
         packaged = (stub + extract.Reader.varint_bytes(0)
                     + extract.Reader.varint_bytes(len(payload) ^ crypto.SIZE_XOR) + payload)
@@ -76,9 +77,9 @@ class CustomCryptoTests(unittest.TestCase):
             target.write_bytes(packaged)
             info, recovered = extract.extract(target)
             self.assertEqual(recovered, stream)
-            self.assertEqual(info.bytecode, b"owned bytecode")
+            self.assertEqual(info.bytecode, b"\x01" + bytes(14))
             self.assertEqual(info.packaging_profile, crypto.PROFILE)
-            replacement = stream[:-14] + b"new owned code"
+            replacement = prefix + b"\x00" + bytes(14)
             repacked = extract.package_owned_module(packaged, replacement)
             self.assertEqual(repacked[:len(stub)], stub)
             target.write_bytes(repacked)
